@@ -1,0 +1,76 @@
+import os
+import requests
+import feedparser
+import schedule
+import time
+from datetime import datetime
+
+TOKEN = os.environ["BOT_TOKEN"]
+CHAT_ID = os.environ["CHAT_ID"]
+
+CATEGORIES = {
+    "⚽ Manchester United": ["Manchester United"],
+    "⚽ Peterborough United": ["Peterborough United"],
+    "🏈 San Francisco 49ers": ["San Francisco 49ers"],
+    "🏉 Leicester Tigers": ["Leicester Tigers"],
+    "🏎️ Formula 1": ["Formula 1"],
+    "🏎️ FIA WEC": ["FIA WEC"],
+    "🎱 Snooker": ["Snooker"],
+    "🎯 Darts": ["Darts"],
+    "⛳ Golf": ["Golf"]
+}
+
+EXCLUDE = ["live", "result", "score", "fixture", "highlights"]
+
+FEEDS = [
+    "http://feeds.bbci.co.uk/sport/football/rss.xml?edition=uk",
+    "https://www.skysports.com/rss/12040",
+    "https://www.espn.com/espn/rss/nfl/news",
+    "http://feeds.bbci.co.uk/sport/rugby-union/rss.xml?edition=uk",
+    "https://www.skysports.com/rss/11044",
+    "https://www.autosport.com/rss/f1/news/",
+    "https://www.fiawec.com/en/news/rss",
+    "https://wst.tv/news/feed/",
+    "https://www.pdc.tv/rss/news",
+    "http://feeds.bbci.co.uk/sport/golf/rss.xml?edition=uk",
+    "https://www.golfchannel.com/rss/golf-news"
+]
+
+def send_message(text):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text}
+    requests.post(url, data=payload)
+
+def fetch_news():
+    seen = set()
+    category_items = {cat: [] for cat in CATEGORIES}
+    for feed_url in FEEDS:
+        feed = feedparser.parse(feed_url)
+        for entry in feed.entries:
+            title = entry.title
+            link = entry.link
+            summary = entry.get("summary", "")
+            if not any(word in title.lower() for word in EXCLUDE):
+                for category, keywords in CATEGORIES.items():
+                    if any(keyword.lower() in (title + summary).lower() for keyword in keywords):
+                        if title not in seen:
+                            category_items[category].append(f"• {title}\n{link}")
+                            seen.add(title)
+    return category_items
+
+def daily_digest():
+    today = datetime.now().strftime("%d %b %Y")
+    category_items = fetch_news()
+    message = f"📢 Daily Sports Digest – {today}\n\n"
+    for category, items in category_items.items():
+        if items:
+            message += f"{category}\n" + "\n".join(items) + "\n\n"
+    if message.strip() == f"📢 Daily Sports Digest – {today}":
+        message += "No new updates found."
+    send_message(message.strip())
+
+schedule.every().day.at("06:30").do(daily_digest)
+
+while True:
+    schedule.run_pending()
+    time.sleep(60)
